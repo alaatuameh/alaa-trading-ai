@@ -1,23 +1,20 @@
 name: AI Agent
-
 on:
   workflow_dispatch:
-
 jobs:
   test:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
       - name: Run AI Agent
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: |
           echo "AI Agent is starting..."
-
-          RESPONSE=$(curl -s https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent \
+          RESPONSE=$(curl -sS --fail-with-body \
+            -X POST \
+            "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent" \
             -H "Content-Type: application/json" \
             -H "x-goog-api-key: $GEMINI_API_KEY" \
             -d '{
@@ -25,11 +22,10 @@ jobs:
                 {
                   "parts": [
                     {
-                      "text": "حلل XAUUSD وأعطني سيناريو شراء وسيناريو بيع، مع نقطة الدخول ووقف الخسارة وجني الأرباح، بناءً على الدعم والمقاومة."
+                      "text": "أنت وكيل تداول ذكي. حلل XAUUSD بناءً على الاتجاه والدعم والمقاومة والزخم، وأعطني سيناريو شراء وسيناريو بيع مع نقطة دخول ووقف خسارة وجني أرباح. لا تنفذ أي صفقة بنفسك."
                     }
                   ]
                 }
               ]
             }')
-
           echo "$RESPONSE"
