@@ -12,6 +12,17 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Run AI Agent
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: |
-          echo "AI Agent is ready"
-          echo "XAUUSD analysis workflow started"
+          echo "AI Agent is starting..."
+
+          RESPONSE=$(curl -s https://api.openai.com/v1/responses \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer $OPENAI_API_KEY" \
+            -d '{
+              "model": "gpt-5.6-luna",
+              "input": "حلل XAUUSD كتحليل فني تعليمي. أعطني الاتجاه الحالي، أهم مستويات الدعم والمقاومة، وسيناريو شراء وسيناريو بيع مع نقطة الدخول ووقف الخسارة وجني الأرباح."
+            }')
+
+          echo "$RESPONSE"
