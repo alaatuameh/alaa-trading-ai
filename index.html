@@ -82,13 +82,17 @@
       border: none;
       background: #2563eb;
       color: white;
-      padding: 0 20px;
+      padding: 0 18px;
       border-radius: 12px;
       font-size: 16px;
       cursor: pointer;
     }
     button:disabled {
       opacity: .5;
+    }
+    #mic {
+      background: #10b981;
+      padding: 0 14px;
     }
   </style>
 </head>
@@ -102,7 +106,7 @@
     </div>
 
     <div id="messages">
-      <div class="message agent">أهلاً 👋 أنا وكيلك الذكي. اكتبلي أي شيء وخلينا نبدأ.</div>
+      <div class="message agent">أهلاً 👋 أنا وكيلك الذكي. اكتبلي أو احكيلي أي شيء وخلينا نبدأ.</div>
     </div>
 
     <div class="input-area">
@@ -112,6 +116,7 @@
         placeholder="اكتب رسالتك هنا..."
         autocomplete="off"
       />
+      <button id="mic" type="button">🎤</button>
       <button id="send">إرسال</button>
     </div>
 
@@ -120,6 +125,7 @@
   <script>
     const input = document.getElementById("input");
     const send = document.getElementById("send");
+    const mic = document.getElementById("mic");
     const messages = document.getElementById("messages");
 
     const AGENT_URL = "https://script.google.com/macros/s/AKfycbxAA5e8Y5VxH_xZuOD4nsxa2_BevwMyLXahsGvwn2YRLQRVSXgSQYAIe0PouHgzn14f/exec";
@@ -166,11 +172,42 @@
 
     send.addEventListener("click", sendMessage);
 
-    input.addEventListener("keydown", function(e) {
+    input.addEventListener("keydown", function (e) {
       if (e.key === "Enter") {
         sendMessage();
       }
     });
+
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+    if (SpeechRecognition) {
+      const recognition = new SpeechRecognition();
+      recognition.lang = "ar-SA";
+      recognition.continuous = false;
+      recognition.interimResults = false;
+
+      mic.addEventListener("click", function () {
+        recognition.start();
+        mic.textContent = "🔴";
+      });
+
+      recognition.onresult = function (event) {
+        input.value = event.results[0][0].transcript;
+        mic.textContent = "🎤";
+        sendMessage();
+      };
+
+      recognition.onerror = function () {
+        mic.textContent = "🎤";
+      };
+
+      recognition.onend = function () {
+        mic.textContent = "🎤";
+      };
+    } else {
+      mic.disabled = true;
+      mic.textContent = "❌";
+    }
   </script>
 
 </body>
