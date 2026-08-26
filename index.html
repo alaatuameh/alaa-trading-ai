@@ -6,10 +6,7 @@
   <title>AI Agent</title>
 
   <style>
-    * {
-      box-sizing: border-box;
-    }
-
+    * { box-sizing: border-box; }
     body {
       margin: 0;
       font-family: Arial, sans-serif;
@@ -19,7 +16,6 @@
       justify-content: center;
       align-items: center;
     }
-
     .chat {
       width: 100%;
       max-width: 600px;
@@ -31,7 +27,6 @@
       flex-direction: column;
       overflow: hidden;
     }
-
     .header {
       background: #111827;
       color: white;
@@ -40,49 +35,41 @@
       font-size: 21px;
       font-weight: bold;
     }
-
     .status {
-      font-size: 12px;
-      color: #9ca3af;
-      margin-top: 5px;
+      font-size: 13px;
+      font-weight: normal;
+      opacity: 0.7;
     }
-
     #messages {
       flex: 1;
-      padding: 18px;
+      padding: 16px;
       overflow-y: auto;
       display: flex;
       flex-direction: column;
-      gap: 12px;
+      gap: 10px;
     }
-
     .message {
-      padding: 12px 15px;
-      border-radius: 15px;
-      max-width: 85%;
-      line-height: 1.6;
-      white-space: pre-wrap;
+      max-width: 75%;
+      padding: 10px 14px;
+      border-radius: 14px;
+      line-height: 1.5;
     }
-
     .user {
       align-self: flex-start;
       background: #2563eb;
       color: white;
     }
-
     .agent {
       align-self: flex-end;
       background: #e5e7eb;
       color: #111827;
     }
-
     .input-area {
       display: flex;
       gap: 8px;
       padding: 12px;
       border-top: 1px solid #ddd;
     }
-
     #input {
       flex: 1;
       border: 1px solid #ccc;
@@ -91,7 +78,6 @@
       font-size: 16px;
       outline: none;
     }
-
     button {
       border: none;
       background: #2563eb;
@@ -101,142 +87,91 @@
       font-size: 16px;
       cursor: pointer;
     }
-
     button:disabled {
       opacity: .5;
     }
   </style>
 </head>
-
 <body>
 
-<div class="chat">
+  <div class="chat">
 
-  <div class="header">
-    🤖 AI Agent
-    <div class="status">وكيل التداول الذكي</div>
-  </div>
-
-  <div id="messages">
-    <div class="message agent">
-      أهلاً 👋 أنا وكيلك الذكي. اكتبلي أي شيء وخلينا نبدأ.
+    <div class="header">
+      🤖 AI Agent
+      <div class="status">وكيل التداول الذكي</div>
     </div>
+
+    <div id="messages">
+      <div class="message agent">أهلاً 👋 أنا وكيلك الذكي. اكتبلي أي شيء وخلينا نبدأ.</div>
+    </div>
+
+    <div class="input-area">
+      <input
+        id="input"
+        type="text"
+        placeholder="اكتب رسالتك هنا..."
+        autocomplete="off"
+      />
+      <button id="send">إرسال</button>
+    </div>
+
   </div>
 
-  <div class="input-area">
-    <input
-      id="input"
-      type="text"
-      placeholder="اكتب رسالتك هنا..."
-      autocomplete="off"
-    />
+  <script>
+    const input = document.getElementById("input");
+    const send = document.getElementById("send");
+    const messages = document.getElementById("messages");
 
-    <button id="send">إرسال</button>
-    <button id="mic" type="button">🎤</button>
-  </div>
+    const AGENT_URL = "https://script.google.com/macros/s/AKfycbxAA5e8Y5VxH_xZuOD4nsxa2_BevwMyLXahsGvwn2YRLQRVSXgSQYAIe0PouHgzn14f/exec";
 
-</div>
+    function addMessage(text, type) {
+      const div = document.createElement("div");
+      div.className = "message " + type;
+      div.textContent = text;
+      messages.appendChild(div);
+      messages.scrollTop = messages.scrollHeight;
+    }
 
-<script>
-  const input = document.getElementById("input");
-  const send = document.getElementById("send");
-  const messages = document.getElementById("messages");
-const mic = document.getElementById("mic");
+    async function sendMessage() {
+      const text = input.value.trim();
+      if (!text) return;
 
-const SpeechRecognition =
-  window.SpeechRecognition || window.webkitSpeechRecognition;
+      addMessage(text, "user");
+      input.value = "";
+      send.disabled = true;
+      send.textContent = "...";
 
-if (SpeechRecognition) {
-  const recognition = new SpeechRecognition();
+      try {
+        const response = await fetch(AGENT_URL, {
+          method: "POST",
+          body: JSON.stringify({ message: text })
+        });
 
-  recognition.lang = "ar-SA";
-  recognition.continuous = false;
-  recognition.interimResults = false;
+        const data = await response.json();
 
-  mic.addEventListener("click", function () {
-    recognition.start();
-    mic.textContent = "⏺️";
-  });
+        if (data.reply) {
+          addMessage(data.reply, "agent");
+        } else {
+          addMessage("صار خطأ وما قدرت أحصل على رد.", "agent");
+        }
 
-  recognition.onresult = function (event) {
-    input.value = event.results[0][0].transcript;
-    mic.textContent = "🎤";
-    input.focus();
-  };
-
-  recognition.onerror = function () {
-    mic.textContent = "🎤";
-  };
-
-  recognition.onend = function () {
-    mic.textContent = "🎤";
-  };
-} else {
-  mic.disabled = true;
-  mic.textContent = "❌";
-}
-  function addMessage(text, type) {
-    const div = document.createElement("div");
-    div.className = "message " + type;
-    div.textContent = text;
-    messages.appendChild(div);
-    messages.scrollTop = messages.scrollHeight;
-  }
-
-  async function sendMessage() {
-
-    const text = input.value.trim();
-
-    if (!text) return;
-
-    addMessage(text, "user");
-
-    input.value = "";
-    send.disabled = true;
-    send.textContent = "...";
-
-    try {
-
-      const response = await fetch("/api/chat", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          message: text
-        })
-      });
-
-      const data = await response.json();
-
-      if (data.reply) {
-        addMessage(data.reply, "agent");
-      } else {
-        addMessage("صار خطأ وما قدرت أحصل على رد.", "agent");
+      } catch (error) {
+        addMessage("ما قدرت أتصل بالوكيل حالياً. تأكد أن السيرفر شغال.", "agent");
       }
 
-    } catch (error) {
-
-      addMessage(
-        "ما قدرت أتصل بالوكيل حالياً. تأكد أن السيرفر شغال.",
-        "agent"
-      );
-
+      send.disabled = false;
+      send.textContent = "إرسال";
+      input.focus();
     }
 
-    send.disabled = false;
-    send.textContent = "إرسال";
-    input.focus();
-  }
+    send.addEventListener("click", sendMessage);
 
-  send.addEventListener("click", sendMessage);
-
-  input.addEventListener("keydown", function(e) {
-    if (e.key === "Enter") {
-      sendMessage();
-    }
-  });
-</script>
+    input.addEventListener("keydown", function(e) {
+      if (e.key === "Enter") {
+        sendMessage();
+      }
+    });
+  </script>
 
 </body>
 </html>
