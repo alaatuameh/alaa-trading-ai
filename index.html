@@ -4,7 +4,6 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>AI Agent</title>
-
   <style>
     * { box-sizing: border-box; }
     body {
@@ -35,91 +34,69 @@
       font-size: 21px;
       font-weight: bold;
     }
-    .status {
-      font-size: 13px;
-      font-weight: normal;
-      opacity: 0.7;
-    }
+    .status { font-size: 13px; font-weight: normal; opacity: 0.7; }
     #messages {
       flex: 1;
       padding: 16px;
       overflow-y: auto;
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
     }
     .message {
-      max-width: 75%;
+      max-width: 80%;
       padding: 10px 14px;
       border-radius: 14px;
+      margin-bottom: 10px;
       line-height: 1.5;
     }
-    .user {
-      align-self: flex-start;
+    .message.user {
       background: #2563eb;
       color: white;
+      margin-left: auto;
     }
-    .agent {
-      align-self: flex-end;
+    .message.agent {
       background: #e5e7eb;
       color: #111827;
+      margin-right: auto;
     }
     .input-area {
       display: flex;
       gap: 8px;
       padding: 12px;
-      border-top: 1px solid #ddd;
+      border-top: 1px solid #eee;
     }
     #input {
       flex: 1;
-      border: 1px solid #ccc;
-      border-radius: 12px;
-      padding: 13px;
+      padding: 12px;
+      border: 1px solid #ddd;
+      border-radius: 10px;
       font-size: 16px;
-      outline: none;
     }
     button {
+      padding: 12px 18px;
       border: none;
+      border-radius: 10px;
       background: #2563eb;
       color: white;
-      padding: 0 18px;
-      border-radius: 12px;
-      font-size: 16px;
+      font-size: 15px;
       cursor: pointer;
     }
-    button:disabled {
-      opacity: .5;
-    }
-    #mic {
-      background: #10b981;
-      padding: 0 14px;
-    }
+    button:disabled { opacity: 0.5; }
+    #mic { background: #059669; }
   </style>
 </head>
 <body>
-
   <div class="chat">
-
     <div class="header">
-      🤖 AI Agent
+      AI Agent 🤖
       <div class="status">وكيل التداول الذكي</div>
     </div>
-
     <div id="messages">
       <div class="message agent">أهلاً 👋 أنا وكيلك الذكي. اكتبلي أو احكيلي أي شيء وخلينا نبدأ.</div>
     </div>
-
     <div class="input-area">
-      <input
-        id="input"
-        type="text"
-        placeholder="اكتب رسالتك هنا..."
-        autocomplete="off"
-      />
+      <input id="input" type="text" placeholder="اكتب رسالتك هنا..." autocomplete="off" />
       <button id="mic" type="button">🎤</button>
       <button id="send">إرسال</button>
     </div>
-
   </div>
 
   <script>
@@ -138,6 +115,14 @@
       messages.scrollTop = messages.scrollHeight;
     }
 
+    function speak(text) {
+      if (!window.speechSynthesis) return;
+      window.speechSynthesis.cancel();
+      const utter = new SpeechSynthesisUtterance(text);
+      utter.lang = "ar-SA";
+      window.speechSynthesis.speak(utter);
+    }
+
     async function sendMessage() {
       const text = input.value.trim();
       if (!text) return;
@@ -153,16 +138,21 @@
           body: JSON.stringify({ message: text })
         });
 
-        const data = await response.json();
-
-        if (data.reply) {
-          addMessage(data.reply, "agent");
-        } else {
-          addMessage("صار خطأ وما قدرت أحصل على رد.", "agent");
+        const raw = await response.text();
+        let data;
+        try {
+          data = JSON.parse(raw);
+        } catch (e) {
+          data = { reply: raw };
         }
 
+        const replyText = data.reply || data.message || data.response || data.text || data.output || raw;
+        addMessage(replyText, "agent");
+        speak(replyText);
+
       } catch (error) {
-        addMessage("ما قدرت أتصل بالوكيل حالياً. تأكد أن السيرفر شغال.", "agent");
+        const errMsg = "ما قدرت أتصل بالوكيل حالياً. تأكد أن السيرفر شغال. (" + error.message + ")";
+        addMessage(errMsg, "agent");
       }
 
       send.disabled = false;
@@ -171,11 +161,8 @@
     }
 
     send.addEventListener("click", sendMessage);
-
     input.addEventListener("keydown", function (e) {
-      if (e.key === "Enter") {
-        sendMessage();
-      }
+      if (e.key === "Enter") sendMessage();
     });
 
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -205,10 +192,8 @@
         mic.textContent = "🎤";
       };
     } else {
-      mic.disabled = true;
-      mic.textContent = "❌";
+      mic.style.display = "none";
     }
   </script>
-
 </body>
 </html>
