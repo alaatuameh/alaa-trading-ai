@@ -99,12 +99,14 @@
       <button id="send">إرسال</button>
     </div>
   </div>
+  <audio id="player" style="display:none"></audio>
 
   <script>
     const input = document.getElementById("input");
     const send = document.getElementById("send");
     const mic = document.getElementById("mic");
     const messages = document.getElementById("messages");
+    const player = document.getElementById("player");
 
     const AGENT_URL = "https://py-code--alaatuameh.replit.app/analyze";
 
@@ -116,61 +118,64 @@
       messages.scrollTop = messages.scrollHeight;
     }
 
-    // ===== اختيار صوت رجالي عربي =====
-    let cachedVoices = [];
-    let chosenVoice = null;
-
-    function pickMaleArabicVoice() {
-      const voices = window.speechSynthesis.getVoices();
-      if (!voices || voices.length === 0) return null;
-      cachedVoices = voices;
-
-      const arabicVoices = voices.filter(v => v.lang && v.lang.toLowerCase().startsWith("ar"));
-
-      const maleKeywords = ["male", "man", "rgل", "hamed", "majed", "tarik", "naayf", "husam", "abdullah"];
-      let male = arabicVoices.find(v =>
-        maleKeywords.some(k => v.name.toLowerCase().includes(k))
-      );
-      if (male) return male;
-
-      const femaleKeywords = ["female", "woman", "salma", "amira", "laila", "hoda", "zeina"];
-      const notFemale = arabicVoices.find(v =>
-        !femaleKeywords.some(k => v.name.toLowerCase().includes(k))
-      );
-      if (notFemale) return notFemale;
-
-      return arabicVoices[0] || null;
+    // ===== صوت احترافي عبر خدمة نطق حقيقية =====
+    function chunkText(text, maxLen) {
+      const parts = [];
+      let remaining = text.replace(/\n/g, ". ");
+      while (remaining.length > 0) {
+        if (remaining.length <= maxLen) {
+          parts.push(remaining);
+          break;
+        }
+        let cut = remaining.lastIndexOf(" ", maxLen);
+        if (cut <= 0) cut = maxLen;
+        parts.push(remaining.slice(0, cut));
+        remaining = remaining.slice(cut).trim();
+      }
+      return parts;
     }
 
-    if (window.speechSynthesis) {
-      window.speechSynthesis.onvoiceschanged = function () {
-        chosenVoice = pickMaleArabicVoice();
+    async function playChunks(chunks, index) {
+      if (index >= chunks.length) return;
+      const url = "https://translate.google.com/translate_tts?ie=UTF-8&client=tw-ob&tl=ar&q=" + encodeURIComponent(chunks[index]);
+      player.src = url;
+      try {
+        await player.play();
+      } catch (e) {
+        speakFallback(chunks[index]);
+      }
+      player.onended = function () {
+        playChunks(chunks, index + 1);
       };
-      chosenVoice = pickMaleArabicVoice();
+    }
+
+    function speakFallback(text) {
+      if (!window.speechSynthesis) return;
+      const utter = new SpeechSynthesisUtterance(text);
+      utter.lang = "ar-SA";
+      window.speechSynthesis.speak(utter);
     }
 
     function speak(text) {
-      if (!window.speechSynthesis) return;
-      window.speechSynthesis.cancel();
-      const utter = new SpeechSynthesisUtterance(text);
-      utter.lang = "ar-SA";
-      utter.pitch = 0.75;
-      utter.rate = 0.95;
-      if (chosenVoice) utter.voice = chosenVoice;
-      window.speechSynthesis.speak(utter);
+      const chunks = chunkText(text, 180);
+      playChunks(chunks, 0);
     }
 
     function formatDecision(data) {
       const decision = data.decision || "غير معروف";
       const price = data.current_price ? Number(data.current_price).toFixed(2) : "غير متوفر";
-      const reason = data.reason || "";
 
       let decisionAr = decision;
       if (decision === "NO TRADE") decisionAr = "لا توجد صفقة الآن";
       else if (decision === "BUY") decisionAr = "شراء";
       else if (decision === "SELL") decisionAr = "بيع";
 
-      return "القرار: " + decisionAr + "\nالسعر الحالي: " + price + "\nالسبب: " + reason;
+      let trendAr = "";
+      if (data.reason && data.reason.includes("trend = UP")) trendAr = "الاتجاه العام صاعد";
+      else if (data.reason && data.reason.includes("trend = DOWN")) trendAr = "الاتجاه العام هابط";
+      else trendAr = "الاتجاه العام غير واضح";
+
+      return "القرار: " + decisionAr + "\nالسعر الحالي: " + price + "\n" + trendAr;
     }
 
     async function sendMessage() {
@@ -222,7 +227,6 @@
       if (e.key === "Enter") sendMessage();
     });
 
-    // ===== الميكروفون =====
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 
     if (SpeechRecognition) {
@@ -268,3 +272,4 @@
   </script>
 </body>
 </html>
+
