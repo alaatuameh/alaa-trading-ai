@@ -1,113 +1,214 @@
-name: Alaa Trading AI
-
-on:
-  workflow_dispatch:
-
-jobs:
-  ai-agent:
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Run XAUUSD AI Agent
-        env:
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-        run: |
-          set -e
-
-          echo "🚀 Alaa Trading AI starting..."
-
-          # بيانات تجريبية مؤقتة — يتم استبدالها ببيانات السوق الحقيقية
-          PRICE="0"
-          TIMEFRAME_15M="No market data"
-          TIMEFRAME_5M="No market data"
-
-          PROMPT=$(cat <<EOF
-          أنت Alaa Trading AI، وكيل تحليل تداول للذهب XAUUSD.
-
-          مهمتك تحليل البيانات التي يتم إعطاؤها لك فقط.
-          ممنوع اختراع سعر أو شموع أو مستويات غير موجودة في البيانات.
-
-          حلل بالترتيب:
-          1. الاتجاه العام
-          2. القمم والقيعان
-          3. الدعم والمقاومة
-          4. Supply / Demand
-          5. Liquidity
-          6. FVG
-          7. Break of Structure
-          8. Retest
-          9. الزخم
-          10. مقارنة 15 دقيقة مع 5 دقائق
-
-          البيانات الحالية:
-
-          السعر:
-          $PRICE
-
-          15 دقيقة:
-          $TIMEFRAME_15M
-
-          5 دقائق:
-          $TIMEFRAME_5M
-
-          إذا كانت البيانات غير كافية، قل بوضوح:
-          "لا توجد بيانات كافية لإعطاء صفقة."
-
-          إذا كانت البيانات كافية، أعطني:
-
-          الاتجاه:
-          BUY أو SELL أو NEUTRAL
-
-          سيناريو الشراء:
-          Entry:
-          Stop Loss:
-          Take Profit 1:
-          Take Profit 2:
-
-          سيناريو البيع:
-          Entry:
-          Stop Loss:
-          Take Profit 1:
-          Take Profit 2:
-
-          سبب القرار:
-          اشرح باختصار لماذا اخترت السيناريو.
-
-          درجة الثقة:
-          من 0 إلى 100.
-
-          لا تنفذ أي صفقة.
-          أنت فقط تحلل وتحضر الصفقة.
-          EOF
-          )
-
-          RESPONSE=$(curl -sS --fail-with-body \
-            -X POST \
-            "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent" \
-            -H "Content-Type: application/json" \
-            -H "x-goog-api-key: $GEMINI_API_KEY" \
-            -d "$(jq -n \
-              --arg prompt "$PROMPT" \
-              '{
-                contents: [
-                  {
-                    role: "user",
-                    parts: [
-                      {
-                        text: $prompt
-                      }
-                    ]
-                  }
-                ]
-              }'
-            )")
-
-          echo ""
-          echo "===== AI AGENT RESULT ====="
-          echo "$RESPONSE" | jq -r '
-            .candidates[0].content.parts[]
-            | select(.text != null)
-            | .text
-          '
-          echo ""
-          echo "===== END ====="
+"""Public Flask API for the Alaa Trading AI decision engine.
+POST /analyze
+Optional JSON:
+{
+  "timeframe": "5m",
+  "candle_count": 100
+}
+The endpoint is read-only.
+It fetches XAUUSD market data, validates it, and runs the decision engine.
+It never places or manages trades.
+"""
+from collections import defaultdict, deque
+from threading import Lock
+import logging
+import os
+import sys
+import time
+from flask import Flask, jsonify, request
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+# Project modules
+DATA_DIR = os.path.join(BASE_DIR, "01_DATA")
+DECISION_DIR = os.path.join(BASE_DIR, "05_DECISION")
+for directory in (DATA_DIR, DECISION_DIR):
+    if directory not in sys.path:
+        sys.path.insert(0, directory)
+from sources.twelvedata_client import get_candles
+from data_validator import validate_candles
+from decision_engine import make_decision, TIMEFRAME_MINUTES
+app = Flask(__name__)
+app.config["MAX_CONTENT_LENGTH"] = 64 * 1024
+logging.basicConfig(
+    level=os.environ.get("LOG_LEVEL", "INFO")
+)
+logger = logging.getLogger("alaa-trading-ai")
+RATE_WINDOW_SECONDS = 60
+MAX_REQUESTS_PER_WINDOW = 10
+_request_history = defaultdict(deque)
+_rate_lock = Lock()
+def _cors(response):
+    response.headers["Access-Control-Allow-Origin"] = "*"
+    response.headers["Access-Control-Allow-Methods"] = "POST, OPTIONS"
+    response.headers["Access-Control-Allow-Headers"] = "Content-Type"
+    response.headers["Access-Control-Max-Age"] = "600"
+    return response
+@app.after_request
+def add_cors_headers(response):
+    return _cors(response)
+def _client_key():
+    forwarded = request.headers.get("X-Forwarded-For", "")
+    return (
+        forwarded.split(",", 1)[0].strip()
+        or request.remote_addr
+        or "unknown"
+    )
+def _rate_limited(key):
+    now = time.monotonic()
+    with _rate_lock:
+        history = _request_history[key]
+        while history and now - history[0] >= RATE_WINDOW_SECONDS:
+            history.popleft()
+        if len(history) >= MAX_REQUESTS_PER_WINDOW:
+            return True
+        history.append(now)
+    return False
+def _error(message, status):
+    return jsonify({"error": message}), status
+def _read_parameters(payload):
+    timeframe = payload.get("timeframe", "5m")
+    if timeframe not in TIMEFRAME_MINUTES:
+        raise ValueError(
+            "timeframe must be one of: "
+            + ", ".join(TIMEFRAME_MINUTES.keys())
+        )
+    candle_count = payload.get("candle_count", 100)
+    if isinstance(candle_count, bool):
+        raise ValueError("candle_count must be an integer")
+    try:
+        candle_count = int(candle_count)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("candle_count must be an integer") from exc
+    if not 20 <= candle_count <= 500:
+        raise ValueError(
+            "candle_count must be between 20 and 500"
+        )
+    return {
+        "timeframe": timeframe,
+        "candle_count": candle_count,
+    }
+@app.route("/healthz", methods=["GET"])
+@app.route("/api/healthz", methods=["GET"])
+def healthz():
+    return jsonify({
+        "status": "ok",
+        "service": "Alaa Trading AI"
+    })
+@app.route("/analyze", methods=["POST", "OPTIONS"])
+@app.route("/api/analyze", methods=["POST", "OPTIONS"])
+def analyze():
+    if request.method == "OPTIONS":
+        return ("", 204)
+    if _rate_limited(_client_key()):
+        return _error(
+            "Too many requests. Try again in a minute.",
+            429
+        )
+    payload = request.get_json(silent=True)
+    if payload is None:
+        payload = {}
+    if not isinstance(payload, dict):
+        return _error(
+            "Request body must be a JSON object.",
+            400
+        )
+    try:
+        params = _read_parameters(payload)
+        timeframe = params["timeframe"]
+        candle_count = params["candle_count"]
+        logger.info(
+            "Fetching XAUUSD %s candles (%s)",
+            timeframe,
+            candle_count
+        )
+        # 1. Get real XAUUSD market data
+        candles = get_candles(
+            timeframe,
+            count=candle_count
+        )
+        if not candles:
+            return _error(
+                "No XAUUSD market data received.",
+                503
+            )
+        # 2. Validate candles
+        valid, rejected, report = validate_candles(candles)
+        valid = sorted(
+            valid,
+            key=lambda candle: candle["time"]
+        )
+        if len(valid) < 20:
+            return _error(
+                "Not enough valid XAUUSD candles.",
+                503
+            )
+        # 3. Run the EXISTING decision engine
+        result = make_decision(valid)
+        # 4. Return the actual decision
+        response = {
+            "decision": result.get(
+                "decision",
+                "NO TRADE"
+            ),
+            "current_price": result.get(
+                "current_price",
+                valid[-1]["close"]
+            ),
+            "trend": result.get(
+                "trend",
+                "UNKNOWN"
+            ),
+            "trend_strength": result.get(
+                "trend_strength"
+            ),
+            "zone": result.get(
+                "zone"
+            ),
+            "entry": result.get(
+                "entry"
+            ),
+            "stop_loss": result.get(
+                "stop_loss"
+            ),
+            "tp1": result.get(
+                "tp1"
+            ),
+            "tp2": result.get(
+                "tp2"
+            ),
+            "tp3": result.get(
+                "tp3"
+            ),
+            "risk_amount": result.get(
+                "risk_amount"
+            ),
+            "position_size": result.get(
+                "position_size"
+            ),
+            "trade_style": result.get(
+                "trade_style"
+            ),
+            "reason": result.get(
+                "reason",
+                " | ".join(result.get("reasons", []))
+            ),
+            "timeframe": timeframe,
+            "candles_used": len(valid),
+        }
+        return jsonify(response)
+    except ValueError as exc:
+        return _error(str(exc), 400)
+    except Exception:
+        logger.exception(
+            "XAUUSD analysis request failed"
+        )
+        return _error(
+            "Analysis service is temporarily unavailable.",
+            503
+        )
+if __name__ == "__main__":
+    app.run(
+        host="0.0.0.0",
+        port=int(
+            os.environ.get("PORT", "5000")
+        )
+    )
