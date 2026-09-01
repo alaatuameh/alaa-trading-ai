@@ -1,31 +1,113 @@
-name: AI Agent
+name: Alaa Trading AI
+
 on:
   workflow_dispatch:
+
 jobs:
-  test:
+  ai-agent:
     runs-on: ubuntu-latest
+
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-      - name: Run AI Agent
+      - name: Run XAUUSD AI Agent
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: |
-          echo "AI Agent is starting..."
+          set -e
+
+          echo "🚀 Alaa Trading AI starting..."
+
+          # بيانات تجريبية مؤقتة — يتم استبدالها ببيانات السوق الحقيقية
+          PRICE="0"
+          TIMEFRAME_15M="No market data"
+          TIMEFRAME_5M="No market data"
+
+          PROMPT=$(cat <<EOF
+          أنت Alaa Trading AI، وكيل تحليل تداول للذهب XAUUSD.
+
+          مهمتك تحليل البيانات التي يتم إعطاؤها لك فقط.
+          ممنوع اختراع سعر أو شموع أو مستويات غير موجودة في البيانات.
+
+          حلل بالترتيب:
+          1. الاتجاه العام
+          2. القمم والقيعان
+          3. الدعم والمقاومة
+          4. Supply / Demand
+          5. Liquidity
+          6. FVG
+          7. Break of Structure
+          8. Retest
+          9. الزخم
+          10. مقارنة 15 دقيقة مع 5 دقائق
+
+          البيانات الحالية:
+
+          السعر:
+          $PRICE
+
+          15 دقيقة:
+          $TIMEFRAME_15M
+
+          5 دقائق:
+          $TIMEFRAME_5M
+
+          إذا كانت البيانات غير كافية، قل بوضوح:
+          "لا توجد بيانات كافية لإعطاء صفقة."
+
+          إذا كانت البيانات كافية، أعطني:
+
+          الاتجاه:
+          BUY أو SELL أو NEUTRAL
+
+          سيناريو الشراء:
+          Entry:
+          Stop Loss:
+          Take Profit 1:
+          Take Profit 2:
+
+          سيناريو البيع:
+          Entry:
+          Stop Loss:
+          Take Profit 1:
+          Take Profit 2:
+
+          سبب القرار:
+          اشرح باختصار لماذا اخترت السيناريو.
+
+          درجة الثقة:
+          من 0 إلى 100.
+
+          لا تنفذ أي صفقة.
+          أنت فقط تحلل وتحضر الصفقة.
+          EOF
+          )
+
           RESPONSE=$(curl -sS --fail-with-body \
             -X POST \
             "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent" \
             -H "Content-Type: application/json" \
             -H "x-goog-api-key: $GEMINI_API_KEY" \
-            -d '{
-              "contents": [
-                {
-                  "parts": [
-                    {
-                      "text": "أنت وكيل تداول ذكي. حلل XAUUSD بناءً على الاتجاه والدعم والمقاومة والزخم، وأعطني سيناريو شراء وسيناريو بيع مع نقطة دخول ووقف خسارة وجني أرباح. لا تنفذ أي صفقة بنفسك."
-                    }
-                  ]
-                }
-              ]
-            }')
-          echo "$RESPONSE"
+            -d "$(jq -n \
+              --arg prompt "$PROMPT" \
+              '{
+                contents: [
+                  {
+                    role: "user",
+                    parts: [
+                      {
+                        text: $prompt
+                      }
+                    ]
+                  }
+                ]
+              }'
+            )")
+
+          echo ""
+          echo "===== AI AGENT RESULT ====="
+          echo "$RESPONSE" | jq -r '
+            .candidates[0].content.parts[]
+            | select(.text != null)
+            | .text
+          '
+          echo ""
+          echo "===== END ====="
